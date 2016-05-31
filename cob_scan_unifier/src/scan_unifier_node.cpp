@@ -99,6 +99,12 @@ void scan_unifier_node::getParams()
   }
   pnh_.param("loop_rate", config_.loop_rate, (double)100.0);
 
+  if(!pnh_.hasParam("output_frame_id"))
+  {
+    ROS_WARN("No parameter output_frame_id on parameter server. Using default value [/base_link].");
+  }
+  pnh_.param("output_frame_id", config_.output_frame_id, std::string("/base_link"));
+
   XmlRpc::XmlRpcValue topicList;
 
   if (pnh_.getParam("input_scans", topicList))
@@ -238,15 +244,20 @@ sensor_msgs::LaserScan scan_unifier_node::unifieLaserScans()
     ROS_DEBUG("start converting");
     for(int i=0; i < config_.number_input_scans; i++)
     {
+      if (vec_laser_struct_.at(i).current_scan_msg.header.frame_id == "")
+      {
+        ROS_DEBUG_STREAM("No Message received from this topic. Skipping");
+        continue;
+      }
       vec_cloud.at(i).header.stamp = vec_laser_struct_.at(i).current_scan_msg.header.stamp;
       ROS_DEBUG_STREAM("Converting scans to point clouds at index: " << i << ", at time: " << vec_laser_struct_.at(i).current_scan_msg.header.stamp << " now: " << ros::Time::now());
       try
       {
-        listener_.waitForTransform("/base_link", vec_laser_struct_.at(i).current_scan_msg.header.frame_id,
+        listener_.waitForTransform(config_.output_frame_id, vec_laser_struct_.at(i).current_scan_msg.header.frame_id,
             vec_laser_struct_.at(i).current_scan_msg.header.stamp, ros::Duration(3.0));
 
         ROS_DEBUG("now project to point_cloud");
-        projector_.transformLaserScanToPointCloud("/base_link",vec_laser_struct_.at(i).current_scan_msg, vec_cloud.at(i), listener_);
+        projector_.transformLaserScanToPointCloud(config_.output_frame_id,vec_laser_struct_.at(i).current_scan_msg, vec_cloud.at(i), listener_);
       }
       catch(tf::TransformException ex){
         ROS_ERROR("%s",ex.what());
@@ -254,7 +265,7 @@ sensor_msgs::LaserScan scan_unifier_node::unifieLaserScans()
     }
     ROS_DEBUG("Creating message header");
     unified_scan.header = vec_laser_struct_.at(0).current_scan_msg.header;
-    unified_scan.header.frame_id = "base_link";
+    unified_scan.header.frame_id = config_.output_frame_id;
     unified_scan.angle_increment = M_PI/180.0/2.0;
     unified_scan.angle_min = -M_PI + unified_scan.angle_increment*0.01;
     unified_scan.angle_max =  M_PI - unified_scan.angle_increment*0.01;
@@ -269,6 +280,11 @@ sensor_msgs::LaserScan scan_unifier_node::unifieLaserScans()
     ROS_DEBUG("unifie scans");
     for(int j = 0; j < config_.number_input_scans; j++)
     {
+      if (vec_laser_struct_.at(j).current_scan_msg.header.frame_id == "")
+      {
+        ROS_DEBUG_STREAM("No Message received from this topic. Skipping");
+        continue;
+      }
       for (unsigned int i = 0; i < vec_cloud.at(j).points.size(); i++)
       {
         const float &x = vec_cloud.at(j).points[i].x;
@@ -322,16 +338,16 @@ void scan_unifier_node::checkUnifieCondition()
     while(ind < config_.number_input_scans && all_scans_received)
     {
       // if one scan-struct did not receive a new msg all_scans_received is set to false and we do nothing
-      //all_scans_received = vec_laser_struct_.at(ind).new_msg_received;
+      // all_scans_received = vec_laser_struct_.at(ind).new_msg_received;
       all_scans_received = get_new_msg_received(ind);
       ind++;
     }
   }
 
-  if(all_scans_received)
-  {
+  // if(all_scans_received)
+  // {
     // all scan-structs received a new msg so now unifie all of them
-    ROS_DEBUG("all_scans_received");
+    // ROS_DEBUG("all_scans_received");
     sensor_msgs::LaserScan unified_scan = unifieLaserScans();
     ROS_DEBUG("now publish");
     topicPub_LaserUnified_.publish(unified_scan);
@@ -339,7 +355,7 @@ void scan_unifier_node::checkUnifieCondition()
     {
       set_new_msg_received(false, i);
     }
-  }
+  // }
 }
 
 int main(int argc, char** argv)

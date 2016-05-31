@@ -97,6 +97,7 @@ class scan_unifier_node
       int number_input_scans;
       double loop_rate;
       std::vector<std::string> input_scan_topics;
+      std::string output_frame_id;
     };
 
     /** @struct laser_scan_struct
